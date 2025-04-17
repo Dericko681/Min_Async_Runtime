@@ -18,10 +18,9 @@ pub struct MiniRuntime {
 
 // A task that can be scheduled on the executor
 pub struct Task {
-    pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
-    pub task_queue: Arc<Mutex<VecDeque<Arc<Task>>>>,
+    pub future: Pin<Box<dyn Future<Output = ()> + Send>>,
+    pub waker: Option<Waker>,
 }
-
 
 // Timer for sleep functionality
 #[derive(Clone)]
@@ -48,4 +47,3 @@ impl<T> Future for JoinHandle<T> {
         }
     }
 }
-

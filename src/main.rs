@@ -1,12 +1,9 @@
-mod components;
+mod macros; mod components; mod runtime; mod timer;
 mod funtions;
-mod macros;
-mod runtime;
-mod timer;
 
+use std::time::Duration;
 use crate::components::MiniRuntime;
 use crate::funtions::{sleep, spawn};
-use std::time::Duration;
 
 async fn task_one() {
     println!("task one: start");
@@ -25,13 +22,21 @@ fn main() {
     println!("welcome");
     let mut rt = MiniRuntime::new();
     rt.block_on(async {
-        println!("test1");
         let _ = spawn(async {
             println!("Runtime started...");
-        })
-        .await;
+        }).await;
         task_one().await;
         task_two().await;
     });
 }
 
+// Remove the macro version of main to avoid duplicate main functions
+// mini_rt! {
+//     async fn main() {
+//         let _ = spawn(async {
+//             println!("Runtime started...");
+//         }).await;
+//         task_one().await;
+//         task_two().await;
+//     }
+// }
