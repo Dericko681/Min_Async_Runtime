@@ -1,0 +1,8 @@
+[package]
+name = "minimal-async"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-channel = "2.1.1"
+futures-core = "0.3"
