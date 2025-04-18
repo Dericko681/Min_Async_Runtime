@@ -1,42 +1,34 @@
-mod macros; mod components; mod runtime; mod timer;
+mod components;
+mod runtime;
+mod runtime_storage;
 mod funtions;
 
 use std::time::Duration;
 use crate::components::MiniRuntime;
-use crate::funtions::{sleep, spawn};
+use crate::funtions::{spawn, sleep};
 
-async fn task_one() {
-    println!("task one: start");
-    sleep(Duration::from_secs(1)).await;
-    println!("task one: done");
+async fn example_task(id: u32) {
+    println!("Task {} started", id);
+    spawn(async move {
+        println!("Nested task {} started", id);
+        sleep(Duration::from_millis(100)).await;
+        println!("Nested task {} completed", id);
+    });
+    println!("Task {} completed", id);
 }
 
-async fn task_two() {
-    println!("task two: start");
-    sleep(Duration::from_secs(2)).await;
-    println!("task two: done");
-}
-
-// Using block_on
 fn main() {
-    println!("welcome");
-    let mut rt = MiniRuntime::new();
-    rt.block_on(async {
-        let _ = spawn(async {
-            println!("Runtime started...");
-        }).await;
-        task_one().await;
-        task_two().await;
+    let mut runtime = MiniRuntime::new();
+    
+    // Spawn some example tasks
+    spawn(example_task(1));
+    spawn(example_task(2));
+    spawn(example_task(3));
+    
+    // Run the runtime
+    runtime.block_on(async {
+        println!("Main task started");
+        sleep(Duration::from_millis(200)).await;
+        println!("Main task completed");
     });
 }
-
-// Remove the macro version of main to avoid duplicate main functions
-// mini_rt! {
-//     async fn main() {
-//         let _ = spawn(async {
-//             println!("Runtime started...");
-//         }).await;
-//         task_one().await;
-//         task_two().await;
-//     }
-// }

@@ -2,7 +2,11 @@
 name = "minimal-async"
 version = "0.1.0"
 edition = "2024"
+authors = ["Your Name <your.email@example.com>"]
+description = "A minimal async runtime implementation"
 
 [dependencies]
-async-channel = "2.1.1"
+async-channel = "1.8"
 futures-core = "0.3"
+waker-fn = "1.1"
+minimal-async-macros = { path = "./minimal-async-macros" }

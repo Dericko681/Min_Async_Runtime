@@ -1,54 +1,67 @@
 use std::{
-    sync::{Arc, Mutex},
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
     time::Duration,
 };
-use crate::components::{MiniRuntime, Task, JoinHandle};
+use crate::components::{MiniRuntime, Task, JoinHandle, Timer, Sleep};
+use std::sync::{Arc, Mutex};
+use crate::runtime_storage::TASK_QUEUE;
 
-pub fn spawn<F>(future: F) -> JoinHandle<()>
+thread_local! {
+    pub static RUNTIME: Arc<Mutex<MiniRuntime>> = Arc::new(Mutex::new(MiniRuntime::new()));
+}
+
+pub fn spawn<F>(future: F) -> JoinHandle<F::Output>
 where
-    F: Future<Output = ()> + Send + 'static,
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
 {
-    let (sender, receiver) = async_channel::bounded(1);
-    let runtime = CURRENT_RUNTIME.with(|rt| {
-        rt.lock().unwrap().clone()
-    });
-    
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let future = async move {
+        let output = future.await;
+        let _ = sender.send(output);
+    };
+
     let task = Task {
-        future: Box::pin(async move {
-            future.await;
-            let _ = sender.send(()).await;
-        }),
+        future: Box::pin(future),
         waker: None,
     };
-    runtime.task_queue.lock().unwrap().push_back(task);
-    JoinHandle { receiver }
-}
 
-pub async fn sleep(duration: Duration) {
-    let runtime = CURRENT_RUNTIME.with(|rt| {
-        rt.lock().unwrap().clone()
+    // Add the task to the runtime's queue
+    TASK_QUEUE.with(|queue| {
+        queue.lock().unwrap().push_back(task);
     });
-    let timer = runtime.timer.clone();
-    timer.sleep(duration).await;
-}
 
-pub async fn yield_now() {
-    let runtime = CURRENT_RUNTIME.with(|rt| rt.clone());
-    {
-        if let Ok(runtime_guard) = runtime.lock() {
-            if let Ok(mut queue) = runtime_guard.task_queue.lock() {
-                queue.push_back(Task {
-                    future: Box::pin(async {}),
-                    waker: None,
-                });
-            }
-        }
-        
+    JoinHandle {
+        future: Box::pin(async move {
+            receiver.recv().unwrap()
+        }),
     }
 }
 
+pub fn sleep(duration: Duration) -> Sleep {
+    Timer::new().sleep(duration)
+}
 
-// Thread-local storage for the runtime
-thread_local! {
-    static CURRENT_RUNTIME: Arc<Mutex<MiniRuntime>> = Arc::new(Mutex::new(MiniRuntime::new()));
+pub async fn yield_now() {
+    struct YieldNow {
+        yielded: bool,
+    }
+
+    impl Future for YieldNow {
+        type Output = ();
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.yielded {
+                Poll::Ready(())
+            } else {
+                self.yielded = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+
+    YieldNow { yielded: false }.await
 }

@@ -1,82 +1,89 @@
 use std::{
     collections::VecDeque,
+    future::Future,
     sync::{Arc, Mutex},
     task::{Context, Poll, Wake},
-    thread,
 };
-use crate::components::{MiniRuntime, Task, Timer};
+use crate::components::{MiniRuntime, Task};
+use crate::runtime_storage::TASK_QUEUE;
+
+pub struct TaskWaker;
+
+impl TaskWaker {
+    pub fn new() -> Self {
+        TaskWaker
+    }
+}
+
+impl Wake for TaskWaker {
+    fn wake(self: Arc<Self>) {
+        // When woken, add a dummy task to the queue to ensure the runtime continues
+        TASK_QUEUE.with(|queue| {
+            queue.lock().unwrap().push_back(Task {
+                future: Box::pin(async {}),
+                waker: None,
+            });
+        });
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.clone().wake();
+    }
+}
 
 impl MiniRuntime {
     pub fn new() -> Self {
         MiniRuntime {
             task_queue: Arc::new(Mutex::new(VecDeque::new())),
-            timer: Timer {
-                wakeups: Arc::new(Mutex::new(VecDeque::new())),
-            },
         }
     }
 
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
-        let waker = Arc::new(TaskWaker {
-            task_queue: self.task_queue.clone(),
-        }).into();
-        let mut cx = Context::from_waker(&waker);
-        
+        // Pin the future to the stack
         let mut future = Box::pin(future);
+        
+        // Create a waker that will wake the main task
+        let waker = Arc::new(TaskWaker).into();
+        let mut cx = Context::from_waker(&waker);
+
+        // Poll the future until it completes
         loop {
-            // Process the main future
-            if let Poll::Ready(output) = future.as_mut().poll(&mut cx) {
-                return output;
-            }
-            
-            // Process all ready tasks
-            self.process_tasks();
-            
-            // Check timer
-            self.timer.check_wakeups();
-            
-            // Yield if no progress
-            if self.task_queue.lock().unwrap().is_empty() {
-                thread::yield_now();
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(output) => return output,
+                Poll::Pending => {
+                    // Process any tasks in the queue
+                    self.process_tasks();
+                }
             }
         }
     }
 
     fn process_tasks(&self) {
-        let mut queue = self.task_queue.lock().unwrap();
-        let mut i = 0;
-        while i < queue.len() {
-            let mut task = queue.pop_front().unwrap();
-            let waker = task.waker.take().unwrap_or_else(|| {
-                Arc::new(TaskWaker {
-                    task_queue: self.task_queue.clone(),
-                }).into()
-            });
-            
+        // Get the thread-local queue
+        let mut queue = VecDeque::new();
+        TASK_QUEUE.with(|q| {
+            std::mem::swap(&mut *q.lock().unwrap(), &mut queue);
+        });
+        
+        // Process each task
+        while let Some(mut task) = queue.pop_front() {
+            let waker = Arc::new(TaskWaker).into();
             let mut cx = Context::from_waker(&waker);
+
             match task.future.as_mut().poll(&mut cx) {
-                Poll::Ready(()) => continue,
+                Poll::Ready(()) => {
+                    // Task completed
+                }
                 Poll::Pending => {
-                    task.waker = Some(waker);
+                    // Task not ready, put it back in the queue
                     queue.push_back(task);
-                    i += 1;
                 }
             }
         }
-    }
-}
 
-// Waker implementation
-struct TaskWaker {
-    task_queue: Arc<Mutex<VecDeque<Task>>>,
-}
-
-impl Wake for TaskWaker {
-    fn wake(self: Arc<Self>) {
-        self.wake_by_ref();
+        // Put any remaining tasks back in the queue
+        TASK_QUEUE.with(|q| {
+            std::mem::swap(&mut *q.lock().unwrap(), &mut queue);
+        });
     }
-    
-    fn wake_by_ref(self: &Arc<Self>) {
-        // In a real implementation, we'd wake the executor
-    }
-}
+} 

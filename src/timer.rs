@@ -2,10 +2,22 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
     time::{Duration, Instant},
+    sync::{Arc, Mutex},
+    collections::VecDeque,
 };
-use crate::components::Timer;
+
+#[derive(Clone)]
+pub struct Timer {
+    pub wakeups: Arc<Mutex<VecDeque<(Instant, std::task::Waker)>>>,
+}
 
 impl Timer {
+    pub fn new() -> Self {
+        Timer {
+            wakeups: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
+
     pub fn sleep(&self, duration: Duration) -> Sleep {
         Sleep {
             timer: self.clone(),
