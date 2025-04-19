@@ -24,6 +24,7 @@ fn main() {
     spawn(example_task(1));
     spawn(example_task(2));
     spawn(example_task(3));
+    spawn(example_task(4));
     
     // Run the runtime
     runtime.block_on(async {

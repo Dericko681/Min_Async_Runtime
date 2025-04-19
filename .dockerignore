@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Rust specific
+/target
+**/*.rs.bk
+Cargo.lock
+
+# IDE specific
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+
+# Documentation
+README.md
+LICENSE
+*.md
+docs/
+
+# Environment and config
+.env
+.env.*
+*.yml
+*.yaml
+!Dockerfile
+!.github/workflows/*.yml
+
+# Build and dist
+/dist
+/build
+*.tmp
+*.temp
+
+# Docker specific
+.dockerignore
+Dockerfile*
+docker-compose*
+.docker/ 
